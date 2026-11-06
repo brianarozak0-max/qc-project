@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#14213D">
+<link rel="manifest" href="manifest.json">
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;700&family=Barlow:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#14213D;--bg:#EEF1F5;--card:#fff;--line:#D5DBE4;--mute:#5B667A;--hat:#FFB400;--open:#D9822B;--over:#C62828;--ok:#2E7D32}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 Barlow,system-ui,sans-serif;padding-bottom:80px}
+h1,h2,.num,.tab,.btn{font-family:'Barlow Semi Condensed',system-ui,sans-serif}
+header{background:var(--ink);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+header h1{margin:0;font-size:22px;border-left:6px solid var(--hat);padding-left:10px}
+header button{background:none;border:1px solid #fff5;color:#fff;border-radius:8px;padding:6px 12px;font-size:14px}
+main{max-width:640px;margin:0 auto;padding:16px}
+.view{display:none}.view.on{display:block}
+.ruler{background:var(--card);border-radius:12px;padding:16px;margin-bottom:12px}
+.ruler .num{font-size:48px;font-weight:700;line-height:1}
+.bar{height:14px;background:var(--line);border-radius:7px;overflow:hidden;display:flex;margin-top:10px}
+.bar i{display:block;height:100%}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.tile{background:var(--card);border-radius:10px;padding:10px 6px;text-align:center}
+.tile b{display:block;font:700 26px 'Barlow Semi Condensed',sans-serif}
+.tile span{font-size:13px;color:var(--mute)}
+h2{font-size:18px;margin:18px 0 8px}
+.row{display:grid;grid-template-columns:110px 1fr 56px;gap:8px;align-items:center;margin:6px 0;font-size:14px}
+.row .bar{margin:0;height:10px}
+.chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:10px}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:7px 14px;font-size:14px;white-space:nowrap}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+input,select,textarea{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+label{display:block;font-weight:500;margin:14px 0 4px;font-size:15px}
+.card{background:var(--card);border-radius:10px;padding:12px 12px 12px 16px;margin:10px 0;border-left:6px solid var(--open)}
+.card.over{border-color:var(--over)}.card.closed{border-color:var(--ok)}
+.card .top{display:flex;justify-content:space-between;font:700 15px 'Barlow Semi Condensed',sans-serif}
+.card p{margin:6px 0}.meta{font-size:13px;color:var(--mute)}
+.card a{color:var(--ink);font-weight:500}
+.btn{border:0;border-radius:10px;padding:13px 18px;font-size:17px;font-weight:700;background:var(--hat);color:var(--ink);width:100%;margin-top:18px}
+.btn.sm{width:auto;padding:8px 14px;font-size:15px;margin:8px 0 0;background:var(--ink);color:#fff}
+.btn:disabled{opacity:.5}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+.tab{flex:1;background:none;border:0;padding:14px 0;font-size:16px;font-weight:700;color:var(--mute)}
+.tab.on{color:var(--ink);box-shadow:inset 0 4px 0 var(--hat)}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;display:none;z-index:9}
+.empty{text-align:center;color:var(--mute);padding:30px 0}
+img.prev{max-width:100%;border-radius:8px;margin-top:8px}
+</style>
+</head>
+<body>
+<header><h1>QC Monitor</h1><span id="net" style="font-size:13px;opacity:.8"></span><button onclick="load()">Muat ulang</button></header>
+<main>
+  <section id="v-dash" class="view on"></section>
+  <section id="v-list" class="view">
+    <div class="chips" id="chips"></div>
+    <input id="q" placeholder="Cari lokasi, deskripsi, atau nomor NCR" oninput="renderList()">
+    <div id="list"></div>
+  </section>
+  <section id="v-add" class="view">
+    <h2>Catat temuan baru</h2>
+    <label>Disiplin</label><select id="f-disiplin"></select>
+    <label>Lokasi</label><input id="f-lokasi" list="dl-lokasi" placeholder="Pilih atau ketik lokasi"><datalist id="dl-lokasi"></datalist>
+    <label>Deskripsi temuan</label><textarea id="f-desk" rows="4" placeholder="Contoh: Support pipa chilled water kurang, jarak lebih dari 3 m"></textarea>
+    <label>Tingkat keparahan</label><select id="f-sev"></select>
+    <label>PIC perbaikan</label><select id="f-pic"></select>
+    <label>Batas waktu perbaikan</label><input id="f-due" type="date">
+    <label>Nama inspektur</label><input id="f-by" placeholder="Nama Anda">
+    <label>Foto</label><input id="f-foto" type="file" accept="image/*" capture="environment" onchange="prevFoto(this)">
+    <img id="prev" class="prev" hidden>
+    <button class="btn" id="save" onclick="save()">Simpan temuan</button>
+  </section>
+</main>
+<nav>
+  <button class="tab on" data-v="dash">Ringkasan</button>
+  <button class="tab" data-v="list">Temuan</button>
+  <button class="tab" data-v="add">Tambah</button>
+</nav>
+<div id="toast"></div>
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbzD8RH162Xi4aFFDN_DFZv94NtSUzOuAvU8WKiYCSryNfznOfQI-JN9QnUMU8vp8xAlxg/exec', KEY = 'aku sangat tampan';
+let D = {config:{}, findings:[]}, P = [], filter = 'Semua', foto = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const today = () => new Date().toISOString().slice(0, 10);
+const isOver = f => f.status === 'Open' && f.due && f.due < today();
+
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2800)}
+
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + b.dataset.v));
+  window.scrollTo(0, 0);
+});
+
+const dbp = new Promise((ok, no) => { const r = indexedDB.open('qc', 1);
+  r.onupgradeneeded = () => { r.result.createObjectStore('q', {keyPath: 'cid'}); r.result.createObjectStore('kv'); };
+  r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+const tx = (s, m, fn) => dbp.then(db => new Promise((ok, no) => {
+  const t = db.transaction(s, m), o = fn(t.objectStore(s));
+  t.oncomplete = () => ok(o && o.result); t.onerror = () => no(t.error); }));
+
+async function api(body) {
+  const r = await fetch(API, {method: 'POST', body: JSON.stringify(Object.assign({key: KEY}, body))});
+  const j = await r.json();
+  if (!j.ok) { const e = new Error(j.error || 'Server menolak data.'); e.server = true; throw e; }
+  return j;
+}
+
+async function load() {
+  try {
+    const r = await fetch(API + '?action=init&key=' + encodeURIComponent(KEY));
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    D = j; tx('kv', 'readwrite', s => s.put(D, 'init'));
+  } catch (e) {
+    const c = await tx('kv', 'readonly', s => s.get('init'));
+    if (!c) return toast('Belum ada data tersimpan. Buka sekali saat ada sinyal.');
+    D = c; toast(e instanceof TypeError ? 'Tanpa sinyal: memakai data tersimpan' : e.message);
+  }
+  fillForm(); await refreshQ(); render();
+}
+
+async function refreshQ() {
+  P = await tx('q', 'readonly', s => s.getAll());
+  $('net').textContent = (navigator.onLine ? 'Online' : 'Offline') + (P.length ? ' | ' + P.length + ' menunggu kirim' : '');
+}
+
+let busy = false;
+async function sync() {
+  if (busy || !navigator.onLine) return;
+  busy = true; let sent = 0;
+  try {
+    for (const it of await tx('q', 'readonly', s => s.getAll())) {
+      try {
+        await api({action: 'add', cid: it.cid, data: it.data, by: it.by});
+        await tx('q', 'readwrite', s => s.delete(it.cid)); sent++;
+      } catch (e) {
+        if (!e.server) break;
+        it.err = e.message; await tx('q', 'readwrite', s => s.put(it));
+      }
+    }
+  } finally { busy = false; }
+  if (sent) { toast(sent + ' temuan terkirim'); await load(); } else { await refreshQ(); renderList(); }
+}
+
+function pendHtml() {
+  return P.map(p => `<div class="card over"><div class="top"><span>Menunggu kirim</span><span>${p.err ? 'Gagal' : 'Antri'}</span></div><p>${esc(p.data.desk)}</p><div class="meta">${esc(p.data.disiplin)} - ${esc(p.data.lokasi)}${p.err ? '<br>' + esc(p.err) : ''}</div></div>`).join('');
+}
+
+function opts(el, arr) { el.innerHTML = arr.map(v => `<option>${esc(v)}</option>`).join(''); }
+function fillForm() {
+  const c = D.config;
+  opts($('f-disiplin'), c.disiplin); opts($('f-sev'), c.severity); opts($('f-pic'), c.pic);
+  $('dl-lokasi').innerHTML = c.lokasi.map(v => `<option value="${esc(v)}">`).join('');
+  if (!$('f-due').value) { const d = new Date(); d.setDate(d.getDate() + 7); $('f-due').value = d.toISOString().slice(0, 10); }
+}
+
+function render() { renderDash(); renderChips(); renderList(); }
+
+function renderDash() {
+  const F = D.findings, n = F.length, closed = F.filter(f => f.status === 'Closed').length;
+  const open = n - closed, over = F.filter(isOver).length, pct = n ? Math.round(closed / n * 100) : 0;
+  const by = {};
+  F.forEach(f => { const k = f.disiplin || '-'; by[k] = by[k] || {o: 0, c: 0}; f.status === 'Closed' ? by[k].c++ : by[k].o++; });
+  $('v-dash').innerHTML = `
+    <div class="ruler"><div class="num">${pct}%</div><div class="meta">temuan sudah ditutup (${closed} dari ${n})</div>
+      <div class="bar"><i style="width:${pct}%;background:var(--ok)"></i></div></div>
+    <div class="tiles">
+      <div class="tile"><b>${n}</b><span>Total</span></div>
+      <div class="tile"><b style="color:var(--open)">${open}</b><span>Open</span></div>
+      <div class="tile"><b style="color:var(--over)">${over}</b><span>Overdue</span></div>
+      <div class="tile"><b style="color:var(--ok)">${closed}</b><span>Closed</span></div>
+    </div>
+    <h2>Per disiplin</h2>` +
+    (n ? Object.keys(by).map(k => { const t = by[k].o + by[k].c;
+      return `<div class="row"><span>${esc(k)}</span><div class="bar"><i style="width:${by[k].c / t * 100}%;background:var(--ok)"></i><i style="width:${by[k].o / t * 100}%;background:var(--open)"></i></div><span class="meta">${by[k].c}/${t}</span></div>`;
+    }).join('') : '<div class="empty">Belum ada temuan. Buka tab Tambah untuk mencatat yang pertama.</div>');
+}
+
+function renderChips() {
+  $('chips').innerHTML = ['Semua', 'Open', 'Overdue', 'Closed'].map(c =>
+    `<button class="chip ${c === filter ? 'on' : ''}" onclick="filter='${c}';renderChips();renderList()">${c}</button>`).join('');
+}
+
+function renderList() {
+  const q = $('q').value.toLowerCase();
+  const L = D.findings.filter(f =>
+    (filter === 'Semua' || (filter === 'Overdue' ? isOver(f) : f.status === filter)) &&
+    (!q || [f.no, f.lokasi, f.desk, f.pic, f.disiplin].join(' ').toLowerCase().includes(q)));
+  $('list').innerHTML = pendHtml() + (L.length ? L.map(f => `
+    <div class="card ${f.status === 'Closed' ? 'closed' : isOver(f) ? 'over' : ''}">
+      <div class="top"><span>${esc(f.no)} - ${esc(f.severity)}</span><span>${f.status === 'Closed' ? 'Closed' : isOver(f) ? 'Overdue' : 'Open'}</span></div>
+      <p>${esc(f.desk)}</p>
+      <div class="meta">${esc(f.disiplin)} - ${esc(f.lokasi)}<br>PIC: ${esc(f.pic || '-')} | Batas: ${esc(f.due || '-')}${f.tutup ? ' | Ditutup: ' + esc(f.tutup) : ''}</div>
+      ${/^https:\/\//.test(f.foto) ? `<a href="${esc(f.foto)}" target="_blank" rel="noopener">Lihat foto</a>` : ''}
+      ${f.status === 'Open' ? `<br><button class="btn sm" onclick="closeIt('${esc(f.no)}',this)">Tutup temuan</button>` : ''}
+    </div>`).join('') : '<div class="empty">Tidak ada temuan yang cocok.</div>');
+}
+
+function closeIt(no, btn) {
+  if (!navigator.onLine) return toast('Menutup temuan butuh sinyal.');
+  if (!confirm('Tutup temuan ' + no + '? Pastikan perbaikan sudah diperiksa.')) return;
+  btn.disabled = true;
+  api({action: 'close', no}).then(() => { toast(no + ' ditutup'); load(); })
+    .catch(e => { btn.disabled = false; toast(e.message); });
+}
+
+function prevFoto(inp) {
+  const file = inp.files[0]; foto = null; $('prev').hidden = true;
+  if (!file) return;
+  const img = new Image(), url = URL.createObjectURL(file);
+  img.onload = () => {
+    const s = Math.min(1, 1280 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = img.width * s; c.height = img.height * s;
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const data = c.toDataURL('image/jpeg', 0.7);
+    foto = {name: file.name, type: 'image/jpeg', data: data.split(',')[1]};
+    $('prev').src = data; $('prev').hidden = false; URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
+async function save() {
+  const f = {disiplin: $('f-disiplin').value, lokasi: $('f-lokasi').value.trim(), desk: $('f-desk').value.trim(),
+    severity: $('f-sev').value, pic: $('f-pic').value, due: $('f-due').value, foto};
+  const by = $('f-by').value.trim();
+  if (!f.lokasi || !f.desk) return toast('Isi lokasi dan deskripsi dulu.');
+  if (!by) return toast('Isi nama inspektur dulu.');
+  localStorage.setItem('by', by);
+  $('save').disabled = true;
+  await tx('q', 'readwrite', s => s.put({cid: crypto.randomUUID(), data: f, by, at: Date.now()}));
+  $('f-desk').value = ''; $('f-foto').value = ''; $('prev').hidden = true; foto = null;
+  $('save').disabled = false;
+  toast(navigator.onLine ? 'Tersimpan, mengirim...' : 'Tersimpan di HP, dikirim saat ada sinyal');
+  await refreshQ(); renderList(); document.querySelector('[data-v=list]').click();
+  sync();
+}
+
+window.addEventListener('online', sync);
+window.addEventListener('offline', refreshQ);
+$('f-by').value = localStorage.getItem('by') || '';
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+load().then(sync);
+</script>
+</body>
+</html>
