@@ -57,7 +57,7 @@ img.prev{max-width:100%;border-radius:8px;margin-top:8px}
 </style>
 </head>
 <body>
-<header><h1>QC Monitor</h1><span id="net" style="font-size:13px;opacity:.8"></span><button onclick="load()">Muat ulang</button></header>
+<header><h1>QC Monitor</h1><span id="net" style="font-size:13px;opacity:.8"></span><button onclick="reload()">Muat ulang</button></header>
 <main>
   <section id="v-dash" class="view on"></section>
   <section id="v-list" class="view">
@@ -175,8 +175,17 @@ function pendHtml() {
       : p.action === 'start' ? `<p>Mulai dikerjakan ${esc(p.no)}</p>`
       : p.action === 'delete' ? `<p>Hapus ${esc(p.no)}</p>`
       : `<p>${esc(p.data.desk)}</p><div class="meta">${esc(p.data.disiplin)} - ${esc(p.data.lokasi)}</div>`) +
-    (p.err ? `<div class="meta">${esc(p.err)}</div>` : '') + '</div>').join('');
+    (p.err ? `<div class="meta">${esc(p.err)}</div>` : '') +
+    `<button class="btn sm del" onclick="cancelQ('${esc(p.cid)}')">Batalkan</button></div>`).join('');
 }
+
+async function cancelQ(cid) {
+  if (busy) return toast('Sedang mengirim, coba lagi sebentar.');
+  if (!confirm('Batalkan kiriman ini? Data yang belum terkirim akan dibuang dari HP.')) return;
+  await tx('q', 'readwrite', s => s.delete(cid));
+  await refreshQ(); renderList();
+}
+async function reload() { await sync(); await load(); }
 
 function acts(f) {
   if (P.some(p => p.no === f.no)) return '';
