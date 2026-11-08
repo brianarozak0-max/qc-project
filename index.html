@@ -33,7 +33,7 @@ h2{font-size:18px;margin:18px 0 8px}
 input,select,textarea{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
 label{display:block;font-weight:500;margin:14px 0 4px;font-size:15px}
 .card{background:var(--card);border-radius:10px;padding:12px 12px 12px 16px;margin:10px 0;border-left:6px solid var(--open)}
-.card.prog{border-color:var(--prog)}.card.over{border-color:var(--over)}.card.closed{border-color:var(--ok)}
+.btn.sm.del{background:#fff;color:var(--over);border:1px solid var(--over)}.card.prog{border-color:var(--prog)}.card.over{border-color:var(--over)}.card.closed{border-color:var(--ok)}
 .card .top{display:flex;justify-content:space-between;font:700 15px 'Barlow Semi Condensed',sans-serif}
 .card p{margin:6px 0}.meta{font-size:13px;color:var(--mute)}
 .card a{color:var(--ink);font-weight:500}
@@ -157,6 +157,7 @@ async function sync() {
       try {
         await api(it.action === 'close' ? {action: 'close', no: it.no, foto: it.foto, by: it.by}
           : it.action === 'start' ? {action: 'start', no: it.no, by: it.by}
+          : it.action === 'delete' ? {action: 'delete', no: it.no, by: it.by}
           : {action: 'add', cid: it.cid, data: it.data, by: it.by});
         await tx('q', 'readwrite', s => s.delete(it.cid)); sent++;
       } catch (e) {
@@ -172,15 +173,25 @@ function pendHtml() {
   return P.map(p => `<div class="card over"><div class="top"><span>Menunggu kirim</span><span>${p.err ? 'Gagal' : 'Antri'}</span></div>` +
     (p.action === 'close' ? `<p>Tutup ${esc(p.no)} dengan foto bukti</p>`
       : p.action === 'start' ? `<p>Mulai dikerjakan ${esc(p.no)}</p>`
+      : p.action === 'delete' ? `<p>Hapus ${esc(p.no)}</p>`
       : `<p>${esc(p.data.desk)}</p><div class="meta">${esc(p.data.disiplin)} - ${esc(p.data.lokasi)}</div>`) +
     (p.err ? `<div class="meta">${esc(p.err)}</div>` : '') + '</div>').join('');
 }
 
 function acts(f) {
-  if (f.status === 'Closed' || P.some(p => p.no === f.no)) return '';
+  if (P.some(p => p.no === f.no)) return '';
   const n = esc(f.no);
   return '<br>' + (f.status === 'Open' ? `<button class="btn sm" onclick="startIt('${n}')">Mulai dikerjakan</button> ` : '') +
-    `<button class="btn sm" onclick="closeIt('${n}')">Tutup dengan foto bukti</button>`;
+    (f.status !== 'Closed' ? `<button class="btn sm" onclick="closeIt('${n}')">Tutup dengan foto bukti</button> ` : '') +
+    `<button class="btn sm del" onclick="delIt('${n}')">Hapus</button>`;
+}
+async function delIt(no) {
+  const by = (localStorage.getItem('by') || $('f-by').value || '').trim();
+  if (!by) return toast('Isi nama inspektur di tab Tambah dulu.');
+  if (!confirm('Hapus temuan ' + no + '? Temuan disembunyikan dari aplikasi, tapi datanya tetap tersimpan di spreadsheet.')) return;
+  await tx('q', 'readwrite', s => s.put({cid: crypto.randomUUID(), action: 'delete', no, by, at: Date.now()}));
+  toast(navigator.onLine ? 'Menghapus...' : 'Tersimpan di HP, dikirim saat ada sinyal');
+  await refreshQ(); renderList(); sync();
 }
 async function startIt(no) {
   await tx('q', 'readwrite', s => s.put({cid: crypto.randomUUID(), action: 'start', no, by: localStorage.getItem('by') || '', at: Date.now()}));
