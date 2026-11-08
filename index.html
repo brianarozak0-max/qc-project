@@ -7,7 +7,7 @@
 <meta charset="utf-8">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;700&family=Barlow:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root{--ink:#14213D;--bg:#EEF1F5;--card:#fff;--line:#D5DBE4;--mute:#5B667A;--hat:#FFB400;--open:#D9822B;--over:#C62828;--ok:#2E7D32}
+:root{--prog:#1E6FD9;--ink:#14213D;--bg:#EEF1F5;--card:#fff;--line:#D5DBE4;--mute:#5B667A;--hat:#FFB400;--open:#D9822B;--over:#C62828;--ok:#2E7D32}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 Barlow,system-ui,sans-serif;padding-bottom:80px}
 h1,h2,.num,.tab,.btn{font-family:'Barlow Semi Condensed',system-ui,sans-serif}
@@ -33,7 +33,7 @@ h2{font-size:18px;margin:18px 0 8px}
 input,select,textarea{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
 label{display:block;font-weight:500;margin:14px 0 4px;font-size:15px}
 .card{background:var(--card);border-radius:10px;padding:12px 12px 12px 16px;margin:10px 0;border-left:6px solid var(--open)}
-.card.over{border-color:var(--over)}.card.closed{border-color:var(--ok)}
+.card.prog{border-color:var(--prog)}.card.over{border-color:var(--over)}.card.closed{border-color:var(--ok)}
 .card .top{display:flex;justify-content:space-between;font:700 15px 'Barlow Semi Condensed',sans-serif}
 .card p{margin:6px 0}.meta{font-size:13px;color:var(--mute)}
 .card a{color:var(--ink);font-weight:500}
@@ -46,6 +46,14 @@ nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid 
 #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;display:none;z-index:9}
 .empty{text-align:center;color:var(--mute);padding:30px 0}
 img.prev{max-width:100%;border-radius:8px;margin-top:8px}
+#ed,#cl{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column}
+#ed[hidden],#cl[hidden]{display:none}
+#ed{background:#000;justify-content:center}
+#ed canvas{display:block;margin:0 auto;max-width:100%;max-height:calc(100vh - 80px);touch-action:none}
+#ed .acts{display:flex;gap:8px;padding:10px;background:var(--ink);position:absolute;bottom:0;left:0;right:0}
+#ed .acts .btn{margin:0;flex:1;font-size:16px;padding:11px 6px}
+#cl{background:#0009;justify-content:center}
+#cl .box{background:#fff;margin:0 16px;border-radius:12px;padding:16px;max-height:90vh;overflow:auto}
 </style>
 </head>
 <body>
@@ -66,8 +74,9 @@ img.prev{max-width:100%;border-radius:8px;margin-top:8px}
     <label>PIC perbaikan</label><select id="f-pic"></select>
     <label>Batas waktu perbaikan</label><input id="f-due" type="date">
     <label>Nama inspektur</label><input id="f-by" placeholder="Nama Anda">
-    <label>Foto</label><input id="f-foto" type="file" accept="image/*" capture="environment" onchange="prevFoto(this)">
+    <label>Foto (ambil dulu dengan kamera HP, lalu pilih dari galeri)</label><input id="f-foto" type="file" accept="image/*" onchange="prevFoto(this)">
     <img id="prev" class="prev" hidden>
+    <button class="btn sm" id="mark" hidden onclick="markFoto()">Tandai bagian yang perlu diperbaiki</button>
     <button class="btn" id="save" onclick="save()">Simpan temuan</button>
   </section>
 </main>
@@ -76,6 +85,18 @@ img.prev{max-width:100%;border-radius:8px;margin-top:8px}
   <button class="tab" data-v="list">Temuan</button>
   <button class="tab" data-v="add">Tambah</button>
 </nav>
+<div id="ed" hidden>
+  <canvas id="cv"></canvas>
+  <div class="acts"><button class="btn" onclick="edUndo()">Urungkan</button><button class="btn" onclick="edClose(false)">Batal</button><button class="btn" onclick="edClose(true)">Selesai</button></div>
+</div>
+<div id="cl" hidden><div class="box">
+  <h2 id="cl-t">Tutup temuan</h2>
+  <p class="meta">Lampirkan foto bukti perbaikan (pilih dari galeri). Tanpa foto, temuan tidak bisa ditutup.</p>
+  <input id="cl-foto" type="file" accept="image/*" onchange="prevBukti(this)">
+  <img id="cl-prev" class="prev" hidden>
+  <button class="btn" id="cl-ok" onclick="sendClose()" disabled>Kirim bukti dan tutup</button>
+  <button class="btn sm" onclick="$('cl').hidden = true">Batal</button>
+</div></div>
 <div id="toast"></div>
 <script>
 const API = 'https://script.google.com/macros/s/AKfycbzD8RH162Xi4aFFDN_DFZv94NtSUzOuAvU8WKiYCSryNfznOfQI-JN9QnUMU8vp8xAlxg/exec', KEY = 'aku sangat tampan';
@@ -83,11 +104,12 @@ let D = {config:{}, findings:[]}, P = [], filter = 'Semua', foto = null;
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today = () => new Date().toISOString().slice(0, 10);
-const isOver = f => f.status === 'Open' && f.due && f.due < today();
+const isOver = f => f.status !== 'Closed' && f.due && f.due < today();
 
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2800)}
 
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
+  localStorage.setItem('tab', b.dataset.v);
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + b.dataset.v));
   window.scrollTo(0, 0);
@@ -118,7 +140,7 @@ async function load() {
     if (!c) return toast('Belum ada data tersimpan. Buka sekali saat ada sinyal.');
     D = c; toast(e instanceof TypeError ? 'Tanpa sinyal: memakai data tersimpan' : e.message);
   }
-  fillForm(); await refreshQ(); render();
+  fillForm(); restoreDraft(); await refreshQ(); render();
 }
 
 async function refreshQ() {
@@ -133,7 +155,9 @@ async function sync() {
   try {
     for (const it of await tx('q', 'readonly', s => s.getAll())) {
       try {
-        await api({action: 'add', cid: it.cid, data: it.data, by: it.by});
+        await api(it.action === 'close' ? {action: 'close', no: it.no, foto: it.foto, by: it.by}
+          : it.action === 'start' ? {action: 'start', no: it.no, by: it.by}
+          : {action: 'add', cid: it.cid, data: it.data, by: it.by});
         await tx('q', 'readwrite', s => s.delete(it.cid)); sent++;
       } catch (e) {
         if (!e.server) break;
@@ -145,7 +169,23 @@ async function sync() {
 }
 
 function pendHtml() {
-  return P.map(p => `<div class="card over"><div class="top"><span>Menunggu kirim</span><span>${p.err ? 'Gagal' : 'Antri'}</span></div><p>${esc(p.data.desk)}</p><div class="meta">${esc(p.data.disiplin)} - ${esc(p.data.lokasi)}${p.err ? '<br>' + esc(p.err) : ''}</div></div>`).join('');
+  return P.map(p => `<div class="card over"><div class="top"><span>Menunggu kirim</span><span>${p.err ? 'Gagal' : 'Antri'}</span></div>` +
+    (p.action === 'close' ? `<p>Tutup ${esc(p.no)} dengan foto bukti</p>`
+      : p.action === 'start' ? `<p>Mulai dikerjakan ${esc(p.no)}</p>`
+      : `<p>${esc(p.data.desk)}</p><div class="meta">${esc(p.data.disiplin)} - ${esc(p.data.lokasi)}</div>`) +
+    (p.err ? `<div class="meta">${esc(p.err)}</div>` : '') + '</div>').join('');
+}
+
+function acts(f) {
+  if (f.status === 'Closed' || P.some(p => p.no === f.no)) return '';
+  const n = esc(f.no);
+  return '<br>' + (f.status === 'Open' ? `<button class="btn sm" onclick="startIt('${n}')">Mulai dikerjakan</button> ` : '') +
+    `<button class="btn sm" onclick="closeIt('${n}')">Tutup dengan foto bukti</button>`;
+}
+async function startIt(no) {
+  await tx('q', 'readwrite', s => s.put({cid: crypto.randomUUID(), action: 'start', no, by: localStorage.getItem('by') || '', at: Date.now()}));
+  toast(navigator.onLine ? 'Mengirim...' : 'Tersimpan di HP, dikirim saat ada sinyal');
+  await refreshQ(); renderList(); sync();
 }
 
 function opts(el, arr) { el.innerHTML = arr.map(v => `<option>${esc(v)}</option>`).join(''); }
@@ -160,15 +200,15 @@ function render() { renderDash(); renderChips(); renderList(); }
 
 function renderDash() {
   const F = D.findings, n = F.length, closed = F.filter(f => f.status === 'Closed').length;
-  const open = n - closed, over = F.filter(isOver).length, pct = n ? Math.round(closed / n * 100) : 0;
+  const prog = F.filter(f => f.status === 'Dikerjakan').length, open = n - closed - prog, over = F.filter(isOver).length, pct = n ? Math.round(closed / n * 100) : 0;
   const by = {};
   F.forEach(f => { const k = f.disiplin || '-'; by[k] = by[k] || {o: 0, c: 0}; f.status === 'Closed' ? by[k].c++ : by[k].o++; });
   $('v-dash').innerHTML = `
     <div class="ruler"><div class="num">${pct}%</div><div class="meta">temuan sudah ditutup (${closed} dari ${n})</div>
       <div class="bar"><i style="width:${pct}%;background:var(--ok)"></i></div></div>
     <div class="tiles">
-      <div class="tile"><b>${n}</b><span>Total</span></div>
       <div class="tile"><b style="color:var(--open)">${open}</b><span>Open</span></div>
+      <div class="tile"><b style="color:var(--prog)">${prog}</b><span>Dikerjakan</span></div>
       <div class="tile"><b style="color:var(--over)">${over}</b><span>Overdue</span></div>
       <div class="tile"><b style="color:var(--ok)">${closed}</b><span>Closed</span></div>
     </div>
@@ -179,7 +219,7 @@ function renderDash() {
 }
 
 function renderChips() {
-  $('chips').innerHTML = ['Semua', 'Open', 'Overdue', 'Closed'].map(c =>
+  $('chips').innerHTML = ['Semua', 'Open', 'Dikerjakan', 'Overdue', 'Closed'].map(c =>
     `<button class="chip ${c === filter ? 'on' : ''}" onclick="filter='${c}';renderChips();renderList()">${c}</button>`).join('');
 }
 
@@ -189,36 +229,91 @@ function renderList() {
     (filter === 'Semua' || (filter === 'Overdue' ? isOver(f) : f.status === filter)) &&
     (!q || [f.no, f.lokasi, f.desk, f.pic, f.disiplin].join(' ').toLowerCase().includes(q)));
   $('list').innerHTML = pendHtml() + (L.length ? L.map(f => `
-    <div class="card ${f.status === 'Closed' ? 'closed' : isOver(f) ? 'over' : ''}">
-      <div class="top"><span>${esc(f.no)} - ${esc(f.severity)}</span><span>${f.status === 'Closed' ? 'Closed' : isOver(f) ? 'Overdue' : 'Open'}</span></div>
+    <div class="card ${f.status === 'Closed' ? 'closed' : isOver(f) ? 'over' : f.status === 'Dikerjakan' ? 'prog' : ''}">
+      <div class="top"><span>${esc(f.no)} - ${esc(f.severity)}</span><span>${f.status === 'Closed' ? 'Closed' : (isOver(f) ? 'Overdue - ' : '') + esc(f.status)}</span></div>
       <p>${esc(f.desk)}</p>
-      <div class="meta">${esc(f.disiplin)} - ${esc(f.lokasi)}<br>PIC: ${esc(f.pic || '-')} | Batas: ${esc(f.due || '-')}${f.tutup ? ' | Ditutup: ' + esc(f.tutup) : ''}</div>
+      <div class="meta">${esc(f.disiplin)} - ${esc(f.lokasi)}<br>PIC: ${esc(f.pic || '-')} | Batas: ${esc(f.due || '-')}${f.mulai ? ' | Mulai: ' + esc(f.mulai) : ''}${f.tutup ? ' | Ditutup: ' + esc(f.tutup) : ''}</div>
       ${/^https:\/\//.test(f.foto) ? `<a href="${esc(f.foto)}" target="_blank" rel="noopener">Lihat foto</a>` : ''}
-      ${f.status === 'Open' ? `<br><button class="btn sm" onclick="closeIt('${esc(f.no)}',this)">Tutup temuan</button>` : ''}
+      ${/^https:\/\//.test(f.bukti) ? `<a href="${esc(f.bukti)}" target="_blank" rel="noopener">Foto bukti</a>` : ''}
+      ${acts(f)}
     </div>`).join('') : '<div class="empty">Tidak ada temuan yang cocok.</div>');
 }
 
-function closeIt(no, btn) {
-  if (!navigator.onLine) return toast('Menutup temuan butuh sinyal.');
-  if (!confirm('Tutup temuan ' + no + '? Pastikan perbaikan sudah diperiksa.')) return;
-  btn.disabled = true;
-  api({action: 'close', no}).then(() => { toast(no + ' ditutup'); load(); })
-    .catch(e => { btn.disabled = false; toast(e.message); });
+let closing = null, bukti = null, ed = {strokes: [], cur: null};
+const src = f => 'data:' + f.type + ';base64,' + f.data;
+
+function compress(file) {
+  return new Promise(ok => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, 1280 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = img.width * s; c.height = img.height * s;
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      ok({name: file.name, type: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.7).split(',')[1]});
+    };
+    img.src = url;
+  });
 }
 
-function prevFoto(inp) {
-  const file = inp.files[0]; foto = null; $('prev').hidden = true;
-  if (!file) return;
-  const img = new Image(), url = URL.createObjectURL(file);
+async function prevFoto(inp) {
+  const file = inp.files[0]; foto = null; $('prev').hidden = true; $('mark').hidden = true;
+  if (!file) { tx('kv', 'readwrite', s => s.delete('draftFoto')); return; }
+  foto = await compress(file);
+  tx('kv', 'readwrite', s => s.put(foto, 'draftFoto'));
+  showFoto();
+}
+function showFoto() { $('prev').src = src(foto); $('prev').hidden = false; $('mark').hidden = false; }
+
+/* ---- penanda gambar di foto ---- */
+function markFoto() { openEd(foto, f => { foto = f; tx('kv', 'readwrite', s => s.put(foto, 'draftFoto')); showFoto(); }); }
+function openEd(f, cb) {
+  const img = new Image();
   img.onload = () => {
-    const s = Math.min(1, 1280 / Math.max(img.width, img.height)), c = document.createElement('canvas');
-    c.width = img.width * s; c.height = img.height * s;
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    const data = c.toDataURL('image/jpeg', 0.7);
-    foto = {name: file.name, type: 'image/jpeg', data: data.split(',')[1]};
-    $('prev').src = data; $('prev').hidden = false; URL.revokeObjectURL(url);
+    ed = {img, strokes: [], cur: null, cb};
+    $('cv').width = img.width; $('cv').height = img.height;
+    drawEd(); $('ed').hidden = false;
   };
-  img.src = url;
+  img.src = src(f);
+}
+function drawEd() {
+  const c = $('cv'), x = c.getContext('2d');
+  x.drawImage(ed.img, 0, 0);
+  x.strokeStyle = '#E53935'; x.lineWidth = Math.max(5, c.width / 100); x.lineCap = x.lineJoin = 'round';
+  ed.strokes.concat(ed.cur ? [ed.cur] : []).forEach(st => {
+    x.beginPath(); st.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]));
+    if (st.length === 1) x.lineTo(st[0][0] + 0.1, st[0][1]);
+    x.stroke();
+  });
+}
+function pt(e) { const c = $('cv'), r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; }
+$('cv').addEventListener('pointerdown', e => { ed.cur = [pt(e)]; e.target.setPointerCapture(e.pointerId); drawEd(); });
+$('cv').addEventListener('pointermove', e => { if (ed.cur) { ed.cur.push(pt(e)); drawEd(); } });
+$('cv').addEventListener('pointerup', () => { if (ed.cur) { ed.strokes.push(ed.cur); ed.cur = null; drawEd(); } });
+function edUndo() { ed.strokes.pop(); drawEd(); }
+function edClose(ok) {
+  if (ok) ed.cb({name: 'tanda.jpg', type: 'image/jpeg', data: $('cv').toDataURL('image/jpeg', 0.7).split(',')[1]});
+  $('ed').hidden = true;
+}
+
+/* ---- tutup temuan: wajib foto bukti ---- */
+function closeIt(no) {
+  closing = no; bukti = null; $('cl-t').textContent = 'Tutup ' + no;
+  $('cl-foto').value = ''; $('cl-prev').hidden = true; $('cl-ok').disabled = true; $('cl').hidden = false;
+}
+async function prevBukti(inp) {
+  const file = inp.files[0]; bukti = null; $('cl-prev').hidden = true; $('cl-ok').disabled = true;
+  if (!file) return;
+  bukti = await compress(file); $('cl-prev').src = src(bukti); $('cl-prev').hidden = false; $('cl-ok').disabled = false;
+}
+async function sendClose() {
+  if (!bukti) return toast('Foto bukti wajib dilampirkan.');
+  const by = ($('f-by').value || localStorage.getItem('by') || '').trim();
+  if (!by) { $('cl').hidden = true; return toast('Isi nama inspektur di tab Tambah dulu.'); }
+  await tx('q', 'readwrite', s => s.put({cid: crypto.randomUUID(), action: 'close', no: closing, foto: bukti, by, at: Date.now()}));
+  $('cl').hidden = true;
+  toast(navigator.onLine ? 'Mengirim bukti...' : 'Tersimpan di HP, dikirim saat ada sinyal');
+  await refreshQ(); renderList(); sync();
 }
 
 async function save() {
@@ -230,7 +325,8 @@ async function save() {
   localStorage.setItem('by', by);
   $('save').disabled = true;
   await tx('q', 'readwrite', s => s.put({cid: crypto.randomUUID(), data: f, by, at: Date.now()}));
-  $('f-desk').value = ''; $('f-foto').value = ''; $('prev').hidden = true; foto = null;
+  localStorage.removeItem('draft'); tx('kv', 'readwrite', s => s.delete('draftFoto'));
+  $('f-desk').value = ''; $('f-foto').value = ''; $('prev').hidden = true; $('mark').hidden = true; foto = null;
   $('save').disabled = false;
   toast(navigator.onLine ? 'Tersimpan, mengirim...' : 'Tersimpan di HP, dikirim saat ada sinyal');
   await refreshQ(); renderList(); document.querySelector('[data-v=list]').click();
@@ -242,6 +338,17 @@ window.addEventListener('offline', refreshQ);
 $('f-by').value = localStorage.getItem('by') || '';
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+const FIELDS = ['f-disiplin', 'f-lokasi', 'f-desk', 'f-sev', 'f-pic', 'f-due'];
+function saveDraft() { const d = {}; FIELDS.forEach(i => d[i] = $(i).value); localStorage.setItem('draft', JSON.stringify(d)); }
+function restoreDraft() {
+  try { const d = JSON.parse(localStorage.getItem('draft') || '{}'); FIELDS.forEach(i => { if (d[i]) $(i).value = d[i]; }); } catch (e) {}
+}
+FIELDS.forEach(i => { $(i).addEventListener('input', saveDraft); $(i).addEventListener('change', saveDraft); });
+tx('kv', 'readonly', s => s.get('draftFoto')).then(f => {
+  if (f) { foto = f; showFoto(); }
+});
+const t0 = localStorage.getItem('tab');
+if (t0) { const bt = document.querySelector('[data-v="' + t0 + '"]'); if (bt) bt.click(); }
 load().then(sync);
 </script>
 </body>
