@@ -46,14 +46,14 @@ nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid 
 #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;display:none;z-index:9}
 .empty{text-align:center;color:var(--mute);padding:30px 0}
 img.prev{max-width:100%;border-radius:8px;margin-top:8px}
-#ed,#cl{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column}
-#ed[hidden],#cl[hidden]{display:none}
+#ed,#cl,#ev{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column}
+#ed[hidden],#cl[hidden],#ev[hidden]{display:none}
 #ed{background:#000;justify-content:center}
 #ed canvas{display:block;margin:0 auto;max-width:100%;max-height:calc(100vh - 80px);touch-action:none}
 #ed .acts{display:flex;gap:8px;padding:10px;background:var(--ink);position:absolute;bottom:0;left:0;right:0}
 #ed .acts .btn{margin:0;flex:1;font-size:16px;padding:11px 6px}
-#cl{background:#0009;justify-content:center}
-#cl .box{background:#fff;margin:0 16px;border-radius:12px;padding:16px;max-height:90vh;overflow:auto}
+#cl,#ev{background:#0009;justify-content:center}
+#cl .box,#ev .box{background:#fff;margin:0 16px;border-radius:12px;padding:16px;max-height:90vh;overflow:auto}
 </style>
 </head>
 <body>
@@ -97,6 +97,19 @@ img.prev{max-width:100%;border-radius:8px;margin-top:8px}
   <button class="btn" id="cl-ok" onclick="sendClose()" disabled>Kirim bukti dan tutup</button>
   <button class="btn sm" onclick="$('cl').hidden = true">Batal</button>
 </div></div>
+<div id="ev" hidden><div class="box">
+  <h2 id="ev-t">Edit temuan</h2>
+  <label>Disiplin</label><select id="e-disiplin"></select>
+  <label>Lokasi</label><input id="e-lokasi" list="dl-lokasi">
+  <label>Deskripsi temuan</label><textarea id="e-desk" rows="4"></textarea>
+  <label>Tingkat keparahan</label><select id="e-sev"></select>
+  <label>PIC perbaikan</label><select id="e-pic"></select>
+  <label>Batas waktu perbaikan</label><input id="e-due" type="date">
+  <label>Ganti foto (opsional, pilih dari galeri)</label><input id="e-foto" type="file" accept="image/*" onchange="prevEdFoto(this)">
+  <img id="e-prev" class="prev" hidden>
+  <button class="btn" onclick="sendEdit()">Simpan perubahan</button>
+  <button class="btn sm" onclick="$('ev').hidden = true">Batal</button>
+</div></div>
 <div id="toast"></div>
 <script>
 const API = 'https://script.google.com/macros/s/AKfycbzD8RH162Xi4aFFDN_DFZv94NtSUzOuAvU8WKiYCSryNfznOfQI-JN9QnUMU8vp8xAlxg/exec', KEY = 'aku sangat tampan';
@@ -130,15 +143,22 @@ async function api(body) {
 }
 
 async function load() {
+  // 1) tampilkan dulu dari data tersimpan di HP (langsung, tanpa menunggu sinyal)
+  if (!D.config.disiplin) {
+    const c = await tx('kv', 'readonly', s => s.get('init'));
+    if (c) { D = c; fillForm(); restoreDraft(); await refreshQ(); render(); }
+  }
+  // 2) perbarui dari server di belakang layar, dengan batas waktu
   try {
-    const r = await fetch(API + '?action=init&key=' + encodeURIComponent(KEY));
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 15000);
+    const r = await fetch(API + '?action=init&key=' + encodeURIComponent(KEY), {signal: ctl.signal});
+    clearTimeout(tm);
     const j = await r.json();
     if (j.error) throw new Error(j.error);
     D = j; tx('kv', 'readwrite', s => s.put(D, 'init'));
   } catch (e) {
-    const c = await tx('kv', 'readonly', s => s.get('init'));
-    if (!c) return toast('Belum ada data tersimpan. Buka sekali saat ada sinyal.');
-    D = c; toast(e instanceof TypeError ? 'Tanpa sinyal: memakai data tersimpan' : e.message);
+    if (!D.config.disiplin) return toast('Belum ada data tersimpan. Buka sekali saat ada sinyal.');
+    return toast(e instanceof TypeError || e.name === 'AbortError' ? 'Sinyal lemah: memakai data tersimpan' : e.message);
   }
   fillForm(); restoreDraft(); await refreshQ(); render();
 }
@@ -158,6 +178,7 @@ async function sync() {
         await api(it.action === 'close' ? {action: 'close', no: it.no, foto: it.foto, by: it.by}
           : it.action === 'start' ? {action: 'start', no: it.no, by: it.by}
           : it.action === 'delete' ? {action: 'delete', no: it.no, by: it.by}
+          : it.action === 'edit' ? {action: 'edit', no: it.no, data: it.data, foto: it.foto, by: it.by}
           : {action: 'add', cid: it.cid, data: it.data, by: it.by});
         await tx('q', 'readwrite', s => s.delete(it.cid)); sent++;
       } catch (e) {
@@ -174,9 +195,41 @@ function pendHtml() {
     (p.action === 'close' ? `<p>Tutup ${esc(p.no)} dengan foto bukti</p>`
       : p.action === 'start' ? `<p>Mulai dikerjakan ${esc(p.no)}</p>`
       : p.action === 'delete' ? `<p>Hapus ${esc(p.no)}</p>`
+      : p.action === 'edit' ? `<p>Edit ${esc(p.no)}</p>`
       : `<p>${esc(p.data.desk)}</p><div class="meta">${esc(p.data.disiplin)} - ${esc(p.data.lokasi)}</div>`) +
     (p.err ? `<div class="meta">${esc(p.err)}</div>` : '') +
     `<button class="btn sm del" onclick="cancelQ('${esc(p.cid)}')">Batalkan</button></div>`).join('');
+}
+
+let editing = null, edFoto = null;
+function setSel(el, v) {
+  if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v));
+  el.value = v || '';
+}
+function editIt(no) {
+  const f = D.findings.find(x => x.no === no); if (!f) return;
+  const c = D.config;
+  opts($('e-disiplin'), c.disiplin); opts($('e-sev'), c.severity); opts($('e-pic'), c.pic);
+  setSel($('e-disiplin'), f.disiplin); setSel($('e-sev'), f.severity); setSel($('e-pic'), f.pic);
+  $('e-lokasi').value = f.lokasi; $('e-desk').value = f.desk; $('e-due').value = f.due || '';
+  editing = no; edFoto = null; $('e-foto').value = ''; $('e-prev').hidden = true;
+  $('ev-t').textContent = 'Edit ' + no; $('ev').hidden = false;
+}
+async function prevEdFoto(inp) {
+  const file = inp.files[0]; edFoto = null; $('e-prev').hidden = true;
+  if (!file) return;
+  edFoto = await compress(file); $('e-prev').src = src(edFoto); $('e-prev').hidden = false;
+}
+async function sendEdit() {
+  const d = {disiplin: $('e-disiplin').value, lokasi: $('e-lokasi').value.trim(), desk: $('e-desk').value.trim(),
+    severity: $('e-sev').value, pic: $('e-pic').value, due: $('e-due').value};
+  if (!d.lokasi || !d.desk) return toast('Isi lokasi dan deskripsi dulu.');
+  const by = (localStorage.getItem('by') || $('f-by').value || '').trim();
+  if (!by) { $('ev').hidden = true; return toast('Isi nama inspektur di tab Tambah dulu.'); }
+  await tx('q', 'readwrite', s => s.put({cid: crypto.randomUUID(), action: 'edit', no: editing, data: d, foto: edFoto, by, at: Date.now()}));
+  $('ev').hidden = true;
+  toast(navigator.onLine ? 'Mengirim perubahan...' : 'Tersimpan di HP, dikirim saat ada sinyal');
+  await refreshQ(); renderList(); sync();
 }
 
 async function cancelQ(cid) {
@@ -190,7 +243,7 @@ async function reload() { await sync(); await load(); }
 function acts(f) {
   if (P.some(p => p.no === f.no)) return '';
   const n = esc(f.no);
-  return '<br>' + (f.status === 'Open' ? `<button class="btn sm" onclick="startIt('${n}')">Mulai dikerjakan</button> ` : '') +
+  return '<br>' + (f.status !== 'Closed' ? `<button class="btn sm" onclick="editIt('${n}')">Edit</button> ` : '') + (f.status === 'Open' ? `<button class="btn sm" onclick="startIt('${n}')">Mulai dikerjakan</button> ` : '') +
     (f.status !== 'Closed' ? `<button class="btn sm" onclick="closeIt('${n}')">Tutup dengan foto bukti</button> ` : '') +
     `<button class="btn sm del" onclick="delIt('${n}')">Hapus</button>`;
 }
