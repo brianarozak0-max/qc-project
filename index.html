@@ -54,6 +54,26 @@ img.prev{max-width:100%;border-radius:8px;margin-top:8px}
 #ed .acts .btn{margin:0;flex:1;font-size:16px;padding:11px 6px}
 #cl,#ev{background:#0009;justify-content:center}
 #cl .box,#ev .box{background:#fff;margin:0 16px;border-radius:12px;padding:16px;max-height:90vh;overflow:auto}
+.hero{background:var(--ink);color:#fff;border-radius:16px;padding:16px;display:flex;align-items:center;gap:16px;margin-bottom:12px}
+.hero svg{width:120px;flex:none}.hero .big{font:700 22px 'Barlow Semi Condensed';margin-bottom:8px}
+.leg{display:grid;gap:6px;font-size:14px}.leg i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
+.panel{background:var(--card);border-radius:14px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 2px #14213d14}
+.panel h2{margin:0 0 10px;font-size:17px}
+.stack{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line)}.stack i{display:block}
+.late{color:var(--over)}.soon{color:var(--open)}
+.it{background:var(--card);border-radius:14px;padding:12px 14px;margin:10px 0;border-left:6px solid var(--open);box-shadow:0 1px 2px #14213d14}
+.it.prog{border-color:var(--prog)}.it.over{border-color:var(--over)}.it.closed{border-color:var(--ok)}
+.it-h{display:flex;gap:8px;align-items:center;font:700 15px 'Barlow Semi Condensed',sans-serif}
+.it-h .st{margin-left:auto;font-size:13px;padding:3px 10px;border-radius:12px;background:#FBEBD9;color:var(--open)}
+.it.prog .st{background:#E3EEFB;color:var(--prog)}.it.over .st{background:#FDE2E1;color:var(--over)}.it.closed .st{background:#E3F4E6;color:var(--ok)}
+.sev{color:#fff;background:var(--c);padding:2px 8px;border-radius:10px;font-size:12px}
+.it-b{display:flex;gap:10px;margin:8px 0}
+.th{flex:none;width:72px;height:72px;border-radius:10px;overflow:hidden;background:var(--line)}.th img{width:100%;height:100%;object-fit:cover}
+.ds{margin:0 0 6px;font-weight:500}
+.chips2{display:flex;flex-wrap:wrap;gap:6px}.chips2 span{background:var(--bg);border-radius:10px;padding:2px 9px;font-size:13px;color:var(--mute)}
+.it-f{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--mute)}
+.pic i{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--ink);color:#fff;font-size:11px;font-style:normal;margin-right:6px}
+.act br{display:none}
 </style>
 </head>
 <body>
@@ -271,24 +291,53 @@ function fillForm() {
 
 function render() { renderDash(); renderChips(); renderList(); }
 
+const SEV = {PENTING: '#C62828', SEDANG: '#E69100', SANTAI: '#2E7D32', Kritis: '#C62828', Major: '#E69100', Minor: '#5B667A'};
+
+function donut(parts, pct) {
+  const R = 48, C = 2 * Math.PI * R, tot = parts.reduce((a, p) => a + p[0], 0) || 1; let off = 0;
+  return `<svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="${R}" fill="none" stroke="#ffffff22" stroke-width="14"/>` +
+    parts.map(([n, c]) => { const l = n / tot * C, e = n ? `<circle cx="60" cy="60" r="${R}" fill="none" stroke="${c}" stroke-width="14" stroke-dasharray="${l} ${C - l}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)"/>` : ''; off += l; return e; }).join('') +
+    `<text x="60" y="67" text-anchor="middle" font-size="24" font-weight="700" fill="#fff" font-family="Barlow Semi Condensed,sans-serif">${pct}%</text></svg>`;
+}
+
 function renderDash() {
   const F = D.findings, n = F.length, closed = F.filter(f => f.status === 'Closed').length;
-  const prog = F.filter(f => f.status === 'Dikerjakan').length, open = n - closed - prog, over = F.filter(isOver).length, pct = n ? Math.round(closed / n * 100) : 0;
-  const by = {};
-  F.forEach(f => { const k = f.disiplin || '-'; by[k] = by[k] || {o: 0, c: 0}; f.status === 'Closed' ? by[k].c++ : by[k].o++; });
+  const prog = F.filter(f => f.status === 'Dikerjakan').length, open = n - closed - prog;
+  const over = F.filter(isOver).length, pct = n ? Math.round(closed / n * 100) : 0;
+  const by = {}, pic = {}, W = [0, 1, 2, 3, 4, 5].map(() => [0, 0]);
+  const wk = d => d ? Math.floor((new Date(today()) - new Date(d)) / 6048e5) : -1;
+  F.forEach(f => {
+    const k = f.disiplin || '-'; by[k] = by[k] || {o: 0, p: 0, c: 0};
+    by[k][f.status === 'Closed' ? 'c' : f.status === 'Dikerjakan' ? 'p' : 'o']++;
+    if (f.status !== 'Closed') { const q = f.pic || 'Belum ada PIC'; pic[q] = pic[q] || {n: 0, l: 0}; pic[q].n++; if (isOver(f)) pic[q].l++; }
+    const a = wk(f.tgl), b = wk(f.tutup);
+    if (a >= 0 && a < 6) W[a][0]++; if (b >= 0 && b < 6) W[b][1]++;
+  });
+  const seg = (v, t, c) => v ? `<i style="width:${v / t * 100}%;background:${c}"></i>` : '';
+  const maxP = Math.max(1, ...Object.values(pic).map(x => x.n)), mx = Math.max(1, ...W.flat());
+  const bars = W.map((w, i) => { const x = (5 - i) * 48 + 8, h0 = w[0] / mx * 70, h1 = w[1] / mx * 70;
+    return `<rect x="${x}" y="${90 - h0}" width="16" height="${h0}" rx="3" fill="#FFB400"/><rect x="${x + 18}" y="${90 - h1}" width="16" height="${h1}" rx="3" fill="#43A047"/><text x="${x + 17}" y="105" text-anchor="middle" font-size="10" fill="#5B667A">${i ? '-' + i : 'ini'}</text>`; }).join('');
+  if (!n) { $('v-dash').innerHTML = '<div class="empty">Belum ada temuan. Buka tab Tambah untuk mencatat yang pertama.</div>'; return; }
   $('v-dash').innerHTML = `
-    <div class="ruler"><div class="num">${pct}%</div><div class="meta">temuan sudah ditutup (${closed} dari ${n})</div>
-      <div class="bar"><i style="width:${pct}%;background:var(--ok)"></i></div></div>
+    <div class="hero">${donut([[closed, '#43A047'], [prog, '#4C97F0'], [open, '#FFB400']], pct)}
+      <div><div class="big">${n} temuan</div><div class="leg">
+        <span><i style="background:#FFB400"></i>Open ${open}</span>
+        <span><i style="background:#4C97F0"></i>Dikerjakan ${prog}</span>
+        <span><i style="background:#43A047"></i>Closed ${closed}</span></div></div></div>
     <div class="tiles">
       <div class="tile"><b style="color:var(--open)">${open}</b><span>Open</span></div>
       <div class="tile"><b style="color:var(--prog)">${prog}</b><span>Dikerjakan</span></div>
       <div class="tile"><b style="color:var(--over)">${over}</b><span>Overdue</span></div>
       <div class="tile"><b style="color:var(--ok)">${closed}</b><span>Closed</span></div>
     </div>
-    <h2>Per disiplin</h2>` +
-    (n ? Object.keys(by).map(k => { const t = by[k].o + by[k].c;
-      return `<div class="row"><span>${esc(k)}</span><div class="bar"><i style="width:${by[k].c / t * 100}%;background:var(--ok)"></i><i style="width:${by[k].o / t * 100}%;background:var(--open)"></i></div><span class="meta">${by[k].c}/${t}</span></div>`;
-    }).join('') : '<div class="empty">Belum ada temuan. Buka tab Tambah untuk mencatat yang pertama.</div>');
+    <div class="panel"><h2>Per disiplin</h2>` + Object.keys(by).map(k => { const v = by[k], t = v.o + v.p + v.c;
+      return `<div class="row"><span>${esc(k)}</span><div class="stack">${seg(v.c, t, 'var(--ok)')}${seg(v.p, t, 'var(--prog)')}${seg(v.o, t, 'var(--open)')}</div><span class="meta">${v.c}/${t}</span></div>`; }).join('') + `</div>
+    <div class="panel"><h2>Beban per PIC <span class="meta">(belum closed, merah = terlambat)</span></h2>` +
+      (Object.keys(pic).length ? Object.keys(pic).sort((a, b) => pic[b].n - pic[a].n).map(k => { const v = pic[k];
+        return `<div class="row"><span>${esc(k)}</span><div class="stack">${seg(v.l, maxP, 'var(--over)')}${seg(v.n - v.l, maxP, 'var(--prog)')}</div><span class="meta">${v.n}</span></div>`; }).join('') : '<div class="empty">Semua temuan sudah closed.</div>') + `</div>
+    <div class="panel"><h2>Tren 6 minggu</h2>
+      <svg viewBox="0 0 300 110" style="width:100%">${bars}</svg>
+      <div class="meta"><span style="color:#E69100">&#9632;</span> Temuan baru &nbsp; <span style="color:#43A047">&#9632;</span> Ditutup (angka minggu ke belakang)</div></div>`;
 }
 
 function renderChips() {
@@ -296,20 +345,34 @@ function renderChips() {
     `<button class="chip ${c === filter ? 'on' : ''}" onclick="filter='${c}';renderChips();renderList()">${c}</button>`).join('');
 }
 
+function dueInfo(f) {
+  if (f.status === 'Closed' || !f.due) return '';
+  const d = Math.round((new Date(f.due) - new Date(today())) / 864e5);
+  return d < 0 ? `<b class="late">Terlambat ${-d} hari</b>` : d === 0 ? '<b class="soon">Batas hari ini</b>' : `Sisa ${d} hari`;
+}
+function thumb(u) {
+  const m = /\/d\/([\w-]+)/.exec(u || '') || /[?&]id=([\w-]+)/.exec(u || '');
+  return m ? `<a href="${esc(u)}" target="_blank" rel="noopener" class="th"><img loading="lazy" alt="" src="https://drive.google.com/thumbnail?id=${m[1]}&sz=w240" onerror="this.parentNode.style.display='none'"></a>` : '';
+}
+function item(f) {
+  const cls = f.status === 'Closed' ? 'closed' : isOver(f) ? 'over' : f.status === 'Dikerjakan' ? 'prog' : '';
+  const lbl = f.status === 'Closed' ? 'Closed' : (isOver(f) ? 'Overdue - ' : '') + f.status;
+  const ini = (f.pic || '-').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  const link = (u, t) => /^https:\/\//.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${t}</a>` : '';
+  return `<div class="it ${cls}">
+    <div class="it-h"><span>${esc(f.no)}</span><span class="sev" style="--c:${SEV[f.severity] || '#5B667A'}">${esc(f.severity)}</span><span class="st">${esc(lbl)}</span></div>
+    <div class="it-b">${thumb(f.foto)}<div><p class="ds">${esc(f.desk)}</p><div class="chips2"><span>${esc(f.disiplin)}</span><span>${esc(f.lokasi)}</span></div></div></div>
+    <div class="it-f"><span class="pic"><i>${esc(ini)}</i>${esc(f.pic || '-')}</span><span>${dueInfo(f)}</span></div>
+    <div class="meta" style="margin-top:4px">${f.mulai ? 'Mulai: ' + esc(f.mulai) + ' ' : ''}${f.tutup ? 'Ditutup: ' + esc(f.tutup) + ' ' : ''}${link(f.bukti, 'Foto bukti')}</div>
+    <div class="act">${acts(f)}</div></div>`;
+}
 function renderList() {
   const q = $('q').value.toLowerCase();
   const L = D.findings.filter(f =>
     (filter === 'Semua' || (filter === 'Overdue' ? isOver(f) : f.status === filter)) &&
     (!q || [f.no, f.lokasi, f.desk, f.pic, f.disiplin].join(' ').toLowerCase().includes(q)));
-  $('list').innerHTML = pendHtml() + (L.length ? L.map(f => `
-    <div class="card ${f.status === 'Closed' ? 'closed' : isOver(f) ? 'over' : f.status === 'Dikerjakan' ? 'prog' : ''}">
-      <div class="top"><span>${esc(f.no)} - ${esc(f.severity)}</span><span>${f.status === 'Closed' ? 'Closed' : (isOver(f) ? 'Overdue - ' : '') + esc(f.status)}</span></div>
-      <p>${esc(f.desk)}</p>
-      <div class="meta">${esc(f.disiplin)} - ${esc(f.lokasi)}<br>PIC: ${esc(f.pic || '-')} | Batas: ${esc(f.due || '-')}${f.mulai ? ' | Mulai: ' + esc(f.mulai) : ''}${f.tutup ? ' | Ditutup: ' + esc(f.tutup) : ''}</div>
-      ${/^https:\/\//.test(f.foto) ? `<a href="${esc(f.foto)}" target="_blank" rel="noopener">Lihat foto</a>` : ''}
-      ${/^https:\/\//.test(f.bukti) ? `<a href="${esc(f.bukti)}" target="_blank" rel="noopener">Foto bukti</a>` : ''}
-      ${acts(f)}
-    </div>`).join('') : '<div class="empty">Tidak ada temuan yang cocok.</div>');
+  $('list').innerHTML = pendHtml() + `<div class="meta" style="margin:6px 2px">${L.length} temuan</div>` +
+    (L.length ? L.map(item).join('') : '<div class="empty">Tidak ada temuan yang cocok.</div>');
 }
 
 let closing = null, bukti = null, ed = {strokes: [], cur: null};
